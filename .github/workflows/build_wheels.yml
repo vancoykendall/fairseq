@@ -25,11 +25,11 @@ jobs:
 
       - name: Install cibuildwheel
         run: |
-          pip install pip --upgrade
           python -m pip install cibuildwheel
 
       - name: Build wheels for CPython
         run: |
+          pip install pip --upgrade
           python -m cibuildwheel --output-dir dist
         env:
           CIBW_BUILD: "cp36-*64 cp37-*64 cp38-*64"
