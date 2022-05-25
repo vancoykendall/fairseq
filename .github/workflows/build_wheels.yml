@@ -25,6 +25,7 @@ jobs:
 
       - name: Install cibuildwheel
         run: |
+          pip install pip --upgrade
           python -m pip install cibuildwheel
 
       - name: Build wheels for CPython
