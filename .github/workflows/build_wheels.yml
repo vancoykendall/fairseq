@@ -37,7 +37,7 @@ jobs:
         env:
           CIBW_BUILD: "cp36-*64 cp37-*64 cp38-*64"
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux1
-          CIBW_BEFORE_BUILD: git submodule update --init --recursive && pip install .
+          CIBW_BEFORE_BUILD: git submodule update --init --recursive && pip install . --only-binary numpy
           # Install system library
           CIBW_BEFORE_ALL_LINUX: yum install -y libffi-devel blas-devel lapack-devel libatlas-base-dev 
 
