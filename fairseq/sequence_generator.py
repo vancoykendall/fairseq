@@ -124,7 +124,7 @@ class SequenceGenerator(nn.Module):
     @torch.no_grad()
     def forward(
         self,
-        sample: Dict[str, Dict[str, Tensor]],
+        src_tokens: Tensor,
         prefix_tokens: Optional[Tensor] = None,
         bos_token: Optional[int] = None,
     ):
@@ -137,7 +137,7 @@ class SequenceGenerator(nn.Module):
             bos_token (int, optional): beginning of sentence token
                 (default: self.eos)
         """
-        return self._generate(sample, prefix_tokens, bos_token=bos_token)
+        return self._generate(src_tokens, prefix_tokens, bos_token=bos_token)
 
     # TODO(myleott): unused, deprecate after pytorch-translate migration
     def generate_batched_itr(self, data_itr, beam_size=None, cuda=False, timer=None):
@@ -174,7 +174,7 @@ class SequenceGenerator(nn.Module):
 
     @torch.no_grad()
     def generate(
-        self, models, sample: Dict[str, Dict[str, Tensor]], **kwargs
+        self, models, src_tokens: Tensor, **kwargs
     ) -> List[List[Dict[str, Tensor]]]:
         """Generate translations. Match the api of other fairseq generators.
 
@@ -188,15 +188,16 @@ class SequenceGenerator(nn.Module):
             bos_token (int, optional): beginning of sentence token
                 (default: self.eos)
         """
-        return self._generate(sample, **kwargs)
+        return self._generate(src_tokens, **kwargs)
 
     def _generate(
         self,
-        sample: Dict[str, Dict[str, Tensor]],
+        src_tokens: Tensor,
         prefix_tokens: Optional[Tensor] = None,
         constraints: Optional[Tensor] = None,
         bos_token: Optional[int] = None,
     ):
+        
         incremental_states = torch.jit.annotate(
             List[Dict[str, Dict[str, Optional[Tensor]]]],
             [
@@ -204,7 +205,13 @@ class SequenceGenerator(nn.Module):
                 for i in range(self.model.models_size)
             ],
         )
-        net_input = sample["net_input"]
+        src_lengths = torch.tensor([[ src_tokens.size()[-1] ]], device=src_tokens.device)
+        # print(f"len(src_lengths[0]): {len(src_lengths[0])}")
+        # net_input = sample["net_input"]
+        net_input: Dict[str, Tensor] = {
+            'src_tokens': src_tokens,
+            'src_lengths': src_lengths,
+        }
 
         if "src_tokens" in net_input:
             src_tokens = net_input["src_tokens"]
@@ -256,6 +263,8 @@ class SequenceGenerator(nn.Module):
         assert (
             self.min_len <= max_len
         ), "min_len cannot be larger than max_len, please adjust these!"
+
+        # print(f"max_len: {max_len}")        
         # compute the encoder output for each beam
         with torch.autograd.profiler.record_function("EnsembleModel: forward_encoder"):
             encoder_outs = self.model.forward_encoder(net_input)
@@ -266,7 +275,8 @@ class SequenceGenerator(nn.Module):
         encoder_outs = self.model.reorder_encoder_out(encoder_outs, new_order)
         # ensure encoder_outs is a List.
         assert encoder_outs is not None
-
+        # print(f"type(encoder_outs): {type(encoder_outs)}")
+        # print(f"encoder_outs.size(): {encoder_outs.size()}")
         # initialize buffers
         scores = (
             torch.zeros(bsz * beam_size, max_len + 1).to(src_tokens).float()
@@ -279,7 +289,7 @@ class SequenceGenerator(nn.Module):
         )  # +2 for eos and pad
         tokens[:, 0] = self.eos if bos_token is None else bos_token
         attn: Optional[Tensor] = None
-
+        # print(f"len(tokens): {len(tokens)}")
         # A list that indicates candidates that should be ignored.
         # For example, suppose we're sampling and have already finalized 2/5
         # samples. Then cands_to_ignore would mark 2 positions as being ignored,
@@ -314,10 +324,10 @@ class SequenceGenerator(nn.Module):
         batch_idxs: Optional[Tensor] = None
 
         original_batch_idxs: Optional[Tensor] = None
-        if "id" in sample and isinstance(sample["id"], Tensor):
-            original_batch_idxs = sample["id"]
-        else:
-            original_batch_idxs = torch.arange(0, bsz).type_as(tokens)
+        # if "id" in sample and isinstance(sample["id"], Tensor):
+        #     original_batch_idxs = sample["id"]
+        # else:
+        original_batch_idxs = torch.arange(0, bsz).type_as(tokens)
 
         for step in range(max_len + 1):  # one extra step for EOS marker
             # reorder decoder internal states based on the prev choice of beams
@@ -568,7 +578,7 @@ class SequenceGenerator(nn.Module):
             finalized[sent] = torch.jit.annotate(
                 List[Dict[str, Tensor]], finalized[sent]
             )
-        return finalized
+        return (finalized[0][0]["tokens"],) # for serving purposes, modified return value to be just tokens of most probable beam
 
     def _prefix_tokens(
         self, step: int, lprobs, scores, tokens, prefix_tokens, beam_size: int
@@ -665,7 +675,7 @@ class SequenceGenerator(nn.Module):
                 cum_unfin.append(prev)
         cum_fin_tensor = torch.tensor(cum_unfin, dtype=torch.int).to(bbsz_idx)
 
-        unfin_idx = torch.div(bbsz_idx, beam_size, rounding_mode="trunc")
+        unfin_idx = torch.div(bbsz_idx, beam_size)
         sent = unfin_idx + torch.index_select(cum_fin_tensor, 0, unfin_idx)
 
         # Create a set of "{sent}{unfin_idx}", where
