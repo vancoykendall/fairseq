@@ -178,7 +178,7 @@ class SequenceGenerator(nn.Module):
 
     def _generate(
         self,
-        sample: Dict[str, Dict[str, Tensor]],
+        src_tokens: Tensor,
         prefix_tokens: Optional[Tensor] = None,
         constraints: Optional[Tensor] = None,
         bos_token: Optional[int] = None,
@@ -190,7 +190,13 @@ class SequenceGenerator(nn.Module):
                 for i in range(self.model.models_size)
             ],
         )
-        net_input = sample["net_input"]
+        src_lengths = torch.tensor([[ src_tokens.size()[-1] ]], device=src_tokens.device)
+        # print(f"len(src_lengths[0]): {len(src_lengths[0])}")
+        # net_input = sample["net_input"]
+        net_input: Dict[str, Tensor] = {
+            'src_tokens': src_tokens,
+            'src_lengths': src_lengths,
+        }
 
         if "src_tokens" in net_input:
             src_tokens = net_input["src_tokens"]
