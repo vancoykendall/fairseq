@@ -5,7 +5,7 @@
 
 import math
 import sys
-from typing import Dict, List, Optional
+from typing import Dict, List, Tuple, Optional
 
 import torch
 import torch.nn as nn
@@ -581,7 +581,16 @@ class SequenceGenerator(nn.Module):
             finalized[sent] = torch.jit.annotate(
                 List[Dict[str, Tensor]], finalized[sent]
             )
-        return (finalized[0][0]["tokens"],) # for serving purposes, modified return value to be just tokens of most probable beam
+        # Pad all output tensors with -1 on the end to be return in one tensor
+        max_len: Tensor = torch.max(torch.tensor([x[0]["tokens"].size(dim=0) for x in finalized]))
+        final_tokens: List[Tensor] = []
+        for example in finalized:
+            tokens = example[0]["tokens"]
+            # padding_size: List[int] = [(max_len-tokens.size(0)).item()]
+            padding = torch.ones(max_len-tokens.size(0), dtype=torch.int64, device=tokens.device)
+            final_tokens.append(torch.cat((tokens, padding)))
+            
+        return (torch.stack(final_tokens),) #tuple(example[0]["tokens"] for example in finalized) # for serving purposes, modified return value to be just tokens of most probable beam per example
 
     def _prefix_tokens(
         self, step: int, lprobs, scores, tokens, prefix_tokens, beam_size: int
