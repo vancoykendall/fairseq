@@ -125,6 +125,7 @@ class SequenceGenerator(nn.Module):
     def forward(
         self,
         src_tokens: Tensor,
+        src_lengths: Tensor,
         prefix_tokens: Optional[Tensor] = None,
         bos_token: Optional[int] = None,
     ):
@@ -137,7 +138,7 @@ class SequenceGenerator(nn.Module):
             bos_token (int, optional): beginning of sentence token
                 (default: self.eos)
         """
-        return self._generate(src_tokens, prefix_tokens, bos_token=bos_token)
+        return self._generate(src_tokens, src_lengths, prefix_tokens, bos_token=bos_token)
 
     # TODO(myleott): unused, deprecate after pytorch-translate migration
     def generate_batched_itr(self, data_itr, beam_size=None, cuda=False, timer=None):
@@ -174,7 +175,7 @@ class SequenceGenerator(nn.Module):
 
     @torch.no_grad()
     def generate(
-        self, models, src_tokens: Tensor, **kwargs
+        self, models, src_tokens: Tensor, src_lengths: Tensor, **kwargs
     ) -> List[List[Dict[str, Tensor]]]:
         """Generate translations. Match the api of other fairseq generators.
 
@@ -188,11 +189,12 @@ class SequenceGenerator(nn.Module):
             bos_token (int, optional): beginning of sentence token
                 (default: self.eos)
         """
-        return self._generate(src_tokens, **kwargs)
+        return self._generate(src_tokens, src_lengths, **kwargs)
 
     def _generate(
         self,
         src_tokens: Tensor,
+        src_lengths: Tensor,
         prefix_tokens: Optional[Tensor] = None,
         constraints: Optional[Tensor] = None,
         bos_token: Optional[int] = None,
@@ -205,7 +207,7 @@ class SequenceGenerator(nn.Module):
                 for i in range(self.model.models_size)
             ],
         )
-        src_lengths = torch.tensor([[ src_tokens.size()[-1] ]], device=src_tokens.device)
+
         # print(f"len(src_lengths[0]): {len(src_lengths[0])}")
         # net_input = sample["net_input"]
         net_input: Dict[str, Tensor] = {
@@ -675,7 +677,7 @@ class SequenceGenerator(nn.Module):
                 cum_unfin.append(prev)
         cum_fin_tensor = torch.tensor(cum_unfin, dtype=torch.int).to(bbsz_idx)
 
-        unfin_idx = torch.div(bbsz_idx, beam_size)
+        unfin_idx = torch.div(bbsz_idx, beam_size, rounding_mode="trunc")
         sent = unfin_idx + torch.index_select(cum_fin_tensor, 0, unfin_idx)
 
         # Create a set of "{sent}{unfin_idx}", where
