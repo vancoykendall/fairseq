@@ -368,6 +368,10 @@ class MultilingualDatasetManager(object):
         else:
             training = True
         language_list = cls.load_langs(args, **kargs)
+        ## Van Fix
+        # if len(args.lang_pairs) == 1 and isinstance(args.lang_pairs[0], str) and '\n' in args.lang_pairs[0]:
+        #     args.lang_pairs = args.lang_pairs[0].split('\n')
+        ## Van Fix
         check_langs(
             language_list,
             (
