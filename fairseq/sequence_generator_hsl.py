@@ -892,7 +892,7 @@ class EnsembleModel(nn.Module):
             )
 
 
-class SequenceGeneratorWithAlignment(SequenceGenerator):
+class SequenceGeneratorWithAlignment(SequenceGeneratorHSL):
     def __init__(
         self, models, tgt_dict, left_pad_target=False, print_alignment="hard", **kwargs
     ):
